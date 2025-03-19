@@ -1,14 +1,15 @@
 import 'phaser';
 import { MainScene } from './scenes/MainScene';
+import { WinScene } from './scenes/WinScene';
 import './style.css';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 800,
-  height: 600,
+  width: '100%',
+  height: '100%',
   parent: 'game',
   backgroundColor: '#1F2937',
-  scene: MainScene,
+  scene: [MainScene, WinScene],
   physics: {
     default: 'arcade',
     arcade: {
@@ -17,11 +18,22 @@ const config: Phaser.Types.Core.GameConfig = {
     }
   },
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  disableContextMenu: true,
+  banner: false,
+  render: {
+    pixelArt: true,
+    antialias: false
   }
 };
 
 window.addEventListener('load', () => {
-  new Phaser.Game(config);
+  const game = new Phaser.Game(config);
+  
+  // Add global error handler for debugging
+  window.addEventListener('error', (e) => {
+    console.error('Game error:', e.error);
+  });
 }); 

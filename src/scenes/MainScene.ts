@@ -12,23 +12,50 @@ export class MainScene extends Scene {
   private readonly mazeWidth = 15;
   private readonly mazeHeight = 15;
   private isMoving = false;
+  
+  // Properties to store the selected textures
+  private currentFloorTexture: string = 'floor';
+  private currentWallTexture: string = 'wall';
 
   constructor() {
     super({ key: 'MainScene' });
   }
 
   preload() {
-    // Load assets
+    // Load player and goal assets
     this.load.spritesheet('player', 'assets/player.png', { frameWidth: 32, frameHeight: 32 });
     this.load.spritesheet('goal', 'assets/goal.png', { frameWidth: 32, frameHeight: 32 });
-    this.load.image('wall', 'assets/wall.png');
+    
+    // Load multiple floor textures
     this.load.image('floor', 'assets/floor.png');
+    this.load.image('floor1', 'assets/floor2.png');
+    this.load.image('floor2', 'assets/floor3.png');
+    
+    // Load multiple wall textures
+    this.load.image('wall', 'assets/wall.png');
+    this.load.image('wall1', 'assets/wall2.png');
+    this.load.image('wall2', 'assets/wall3.png');
   }
 
   create() {
+    console.log('MainScene create called');
+    
+    // Make sure any existing tweens are stopped
+    this.tweens.killAll();
+    
+    // Select random textures for this maze
+    this.selectRandomTextures();
+    
     // Generate new maze
     const generator = new MazeGenerator(this.mazeWidth, this.mazeHeight);
     this.maze = generator.generate();
+
+    // Clear any previous event listeners
+    this.scale.off('resize', this.resize, this);
+    this.scale.on('resize', this.resize, this);
+    
+    // Initial resize to set up the camera
+    this.resize();
 
     // Create maze graphics
     this.mazeGraphics = this.add.graphics();
@@ -160,19 +187,37 @@ export class MainScene extends Scene {
   }
 
   private drawMaze() {
+    // Clear any existing graphics
     this.mazeGraphics.clear();
+    
+    // Create a container for maze tiles so we can manage them better
+    const mazeContainer = this.add.container(0, 0);
+    
+    // Store previous tiles if any, so we can destroy them
+    const previousTiles = this.children.getAll().filter(child => 
+      child instanceof Phaser.GameObjects.Image && 
+      (child.texture.key.startsWith('wall') || child.texture.key.startsWith('floor'))
+    );
+    
+    // Destroy previous tiles
+    previousTiles.forEach(tile => tile.destroy());
 
+    // Create new tiles
     for (let y = 0; y < this.mazeHeight; y++) {
       for (let x = 0; x < this.mazeWidth; x++) {
         const cell = this.maze[y][x];
         const xPos = x * this.cellSize;
         const yPos = y * this.cellSize;
 
+        let tileImage;
         if (cell.type === 'wall') {
-          this.add.image(xPos + this.cellSize / 2, yPos + this.cellSize / 2, 'wall');
+          tileImage = this.add.image(xPos + this.cellSize / 2, yPos + this.cellSize / 2, this.currentWallTexture);
         } else {
-          this.add.image(xPos + this.cellSize / 2, yPos + this.cellSize / 2, 'floor');
+          tileImage = this.add.image(xPos + this.cellSize / 2, yPos + this.cellSize / 2, this.currentFloorTexture);
         }
+        
+        // Add the tile to the container
+        mazeContainer.add(tileImage);
       }
     }
   }
@@ -191,37 +236,90 @@ export class MainScene extends Scene {
   private checkWinCondition() {
     const goalPos = this.findCellOfType('goal');
     if (this.playerState.x === goalPos.x && this.playerState.y === goalPos.y) {
-      this.showWinMessage();
+      this.scene.launch('WinScene');
+      this.scene.pause();
     }
   }
 
-  private showWinMessage() {
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-
-    const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7);
-    overlay.setOrigin(0);
-
-    const text = this.add.text(width / 2, height / 2 - 50, 'You Win!', {
-      fontSize: '32px',
-      color: '#ffffff'
-    });
-    text.setOrigin(0.5);
-
-    const restartButton = this.add.text(width / 2, height / 2 + 50, 'Play Again', {
-      fontSize: '24px',
-      color: '#ffffff',
-      backgroundColor: '#4F46E5',
-      padding: { x: 20, y: 10 }
-    });
-    restartButton.setOrigin(0.5);
-    restartButton.setInteractive({ useHandCursor: true });
+  private resize() {
+    // Calculate the scaling factor to fit the maze on screen
+    const width = this.scale.width;
+    const height = this.scale.height;
+    const aspectRatio = width / height;
     
-    restartButton.on('pointerdown', () => {
-      overlay.destroy();
-      text.destroy();
-      restartButton.destroy();
-      this.scene.restart();
+    // Calculate the ideal size of our game area based on the maze dimensions
+    const idealWidth = this.mazeWidth * this.cellSize;
+    const idealHeight = this.mazeHeight * this.cellSize;
+    const idealAspectRatio = idealWidth / idealHeight;
+
+    let scale;
+    if (aspectRatio > idealAspectRatio) {
+      // Window is wider than the ideal aspect ratio
+      scale = height / idealHeight;
+    } else {
+      // Window is taller than the ideal aspect ratio
+      scale = width / idealWidth;
+    }
+
+    // Scale the game to fit the screen
+    this.cameras.main.setZoom(scale * 0.9); // 90% to add a bit of margin
+    this.cameras.main.centerOn(
+      (this.mazeWidth * this.cellSize) / 2,
+      (this.mazeHeight * this.cellSize) / 2
+    );
+  }
+
+  shutdown() {
+    console.log('MainScene shutdown called');
+    
+    // Clean up all resources when scene shuts down
+    if (this.input && this.input.keyboard) {
+      this.input.keyboard.off('keydown-UP');
+      this.input.keyboard.off('keydown-DOWN');
+      this.input.keyboard.off('keydown-LEFT');
+      this.input.keyboard.off('keydown-RIGHT');
+    }
+    
+    // Remove resize listener
+    this.scale.off('resize', this.resize, this);
+    
+    // Kill all tweens
+    this.tweens.killAll();
+    
+    // Clear all timers
+    this.time.removeAllEvents();
+  }
+
+  destroy() {
+    // Final cleanup when scene is destroyed
+    this.shutdown();
+    this.maze = [];
+  }
+
+  init() {
+    // Initialize properties when scene starts
+    this.isMoving = false;
+    
+    // Ensure all game objects are cleared if we're restarting
+    this.children.each((child) => {
+      child.destroy();
     });
+    
+    // Clear all tweens
+    this.tweens.killAll();
+  }
+
+  // Method to randomly select textures for the current maze
+  private selectRandomTextures() {
+    const floorTextures = ['floor', 'floor1', 'floor2'];
+    const wallTextures = ['wall', 'wall1', 'wall2'];
+    
+    // Randomly select a floor texture
+    this.currentFloorTexture = floorTextures[Math.floor(Math.random() * floorTextures.length)];
+    
+    // Randomly select a wall texture
+    this.currentWallTexture = wallTextures[Math.floor(Math.random() * wallTextures.length)];
+    
+    console.log(`Selected textures: ${this.currentFloorTexture}, ${this.currentWallTexture}`);
   }
 } 
